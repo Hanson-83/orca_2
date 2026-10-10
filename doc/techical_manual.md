@@ -46,7 +46,8 @@ Phase 1 不会请求 daemon。`ORCA_MVC_RUNTIME=daemon` 时提交返回 HTTP 501
 
 ## 4. 迁移与回滚
 
-- 新环境：Python 3.10+，安装仓库已有的 FastAPI 栈；MCP 另装 `mcp>=1.9,<3`。前端在 `web/` 执行 `npm install && npm run dev`。
+- 新环境：Python 3.10+，安装仓库已有的 FastAPI 栈；MCP 另装 `mcp>=2,<3`（extra `mvc`）。前端在 `web/` 执行 `npm install && npm run dev`。
+- 跑 `tests/orca_mvc` 的 CI 必须安装 `[mvc]`。缺 `mcp` 时对应用例失败，不会跳过。
 - 不需要 cheshire-drivers 就能跑控制面和 `tests/orca_mvc`。
 - 回滚：还原本分支引入的 `src/orca_mvc`、`web`、`tests/orca_mvc` 以及 `pyproject.toml` / `.gitignore` 的附加项。`src/orca` 无行为变更。
 

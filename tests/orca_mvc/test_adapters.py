@@ -7,7 +7,7 @@ import pytest
 
 from orca_mvc.adapters.base import AdapterOffline
 from orca_mvc.adapters.ros2_mock import Ros2MockAdapter
-from orca_mvc.adapters.sila2_mock import Sila2MockAdapter
+from orca_mvc.adapters.sila2_mock import Sila2MockAdapter, UnknownSilaFeature
 
 
 async def test_sila2_mock_health_and_call_log() -> None:
@@ -26,6 +26,25 @@ async def test_sila2_mock_health_and_call_log() -> None:
     assert health["status"] == "online"
     assert health["call_count"] == 1
     assert health["recent_calls"][0]["command"] == "Shake"
+
+
+async def test_unknown_sila_feature_is_rejected() -> None:
+    adapter = Sila2MockAdapter()
+    await adapter.connect()
+    with pytest.raises(UnknownSilaFeature):
+        await adapter.call_command("NotAFeature", "Do", {})
+    assert adapter.health()["call_count"] == 0
+
+
+async def test_unknown_sila_feature_http(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/adapters/sila2/call",
+        json={"feature": "NotAFeature", "command": "Do", "params": {}},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "UNKNOWN_FEATURE"
+    health = (await client.get("/api/v1/adapters")).json()
+    assert health["sila2"]["call_count"] == 0
 
 
 async def test_ros2_mock_publish_and_service() -> None:

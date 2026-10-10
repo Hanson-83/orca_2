@@ -12,6 +12,14 @@ logger = logging.getLogger("orca_mvc.adapters.sila2")
 _FEATURES = ("ShakerControl", "SealControl", "PlateReader")
 
 
+class UnknownSilaFeature(Exception):
+    """模拟目录里没有这个 Feature。控制面把它收成 4xx，而不是假装调用成功。"""
+
+    def __init__(self, feature: str) -> None:
+        self.feature = feature
+        super().__init__(f"unknown SiLA2 feature: {feature}")
+
+
 class Sila2MockAdapter:
     def __init__(self) -> None:
         self._status = "offline"
@@ -31,13 +39,15 @@ class Sila2MockAdapter:
 
     async def call_command(self, feature: str, command: str, params: dict) -> dict:
         self._require_online()
+        if feature not in _FEATURES:
+            logger.info("sila2 mock reject unknown feature=%s", feature)
+            raise UnknownSilaFeature(feature)
         entry = {
             "feature": feature,
             "command": command,
             "params": params,
             "simulated": True,
             "result": "ok",
-            "known_feature": feature in _FEATURES,
         }
         self._log.append(entry)
         logger.info("sila2 mock call feature=%s command=%s", feature, command)

@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from orca_mvc.adapters.base import AdapterOffline
 from orca_mvc.adapters.ros2_mock import Ros2MockAdapter
-from orca_mvc.adapters.sila2_mock import Sila2MockAdapter
+from orca_mvc.adapters.sila2_mock import Sila2MockAdapter, UnknownSilaFeature
 from orca_mvc.models.cluster import CellLink, Cluster, ClusterView, Transfer, Workcell
 from orca_mvc.models.enums import RunMode, TaskStatus, TransferState, WorkcellStatus
 from orca_mvc.models.protocol import ProtocolMapping
@@ -221,6 +221,7 @@ class ControlPlane:
             method, path = DAEMON_ROUTE_CATALOG["submit_workflow"]
             task.status = TaskStatus.QUEUED
             task.updated_at = utcnow()
+            daemon_selected = self._backend.name == "orca-daemon"
             task.mapping = {
                 "protocol_ref": protocol.name,
                 "workflow_template_name": protocol.workflow_template_name,
@@ -230,7 +231,8 @@ class ControlPlane:
                     "path": path,
                     "body_keys": ["workflow_name", "variables", "run_mode"],
                     "phase": "not_called",
-                    "reason": "Phase1 MockRuntimeBackend 只模拟时间线，不请求 daemon",
+                    "reason": self._submit_reason(daemon_selected),
+                    **({"code": "DAEMON_NOT_WIRED"} if daemon_selected else {}),
                 },
             }
             pending = task.model_copy(deep=True)
@@ -238,7 +240,12 @@ class ControlPlane:
         try:
             ref = await self._backend.submit(pending)
         except DaemonNotWired as exc:
-            await self._mark_failed(task_id, str(exc))
+            await self._mark_failed(
+                task_id,
+                str(exc),
+                orca_reason=self._submit_reason(True),
+                orca_code="DAEMON_NOT_WIRED",
+            )
             raise ControlPlaneError(501, "DAEMON_NOT_WIRED", str(exc)) from exc
         except Exception as exc:
             await self._mark_failed(task_id, str(exc))
@@ -340,6 +347,12 @@ class ControlPlane:
             result = await self._sila2.call_command(feature, command, params)
         except AdapterOffline as exc:
             raise ControlPlaneError(409, "ADAPTER_OFFLINE", "SiLA2 mock 未连接", retryable=True) from exc
+        except UnknownSilaFeature as exc:
+            raise ControlPlaneError(
+                422,
+                "UNKNOWN_FEATURE",
+                f"未知 SiLA2 Feature：{exc.feature}",
+            ) from exc
         self._emit("adapter.called", {"name": "sila2", "command": command})
         return result
 
@@ -411,7 +424,14 @@ class ControlPlane:
             target.updated_at = utcnow()
             self._emit("transfer.updated", target.model_dump(mode="json"))
 
-    async def _mark_failed(self, task_id: str, message: str) -> None:
+    async def _mark_failed(
+        self,
+        task_id: str,
+        message: str,
+        *,
+        orca_reason: str | None = None,
+        orca_code: str | None = None,
+    ) -> None:
         async with self._tasks.lock:
             try:
                 task = self._tasks.require_live(task_id)
@@ -422,8 +442,20 @@ class ControlPlane:
             task.status = TaskStatus.FAILED
             task.error = message
             task.updated_at = utcnow()
+            submit = (task.mapping or {}).get("orca_submit")
+            if orca_reason is not None and isinstance(submit, dict):
+                submit["reason"] = orca_reason
+                submit["phase"] = "not_called"
+                if orca_code is not None:
+                    submit["code"] = orca_code
             snapshot = task.model_copy(deep=True)
         self._emit("task.updated", snapshot.model_dump(mode="json"))
+
+    @staticmethod
+    def _submit_reason(daemon_selected: bool) -> str:
+        if daemon_selected:
+            return "daemon 尚未接线（DAEMON_NOT_WIRED），Phase1 不发出 HTTP"
+        return "Phase1 MockRuntimeBackend 只模拟时间线，不请求 daemon"
 
     def _cluster_view(self) -> ClusterView:
         assert self._cluster is not None

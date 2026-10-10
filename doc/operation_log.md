@@ -10,3 +10,9 @@
   影响：不修改预约、死锁、SystemMap、daemon 路由实现。控制面默认只绑 `127.0.0.1:8100`，无认证。  
   回滚：删除上述新增路径并还原 `pyproject.toml` 与 `.gitignore`。
 - 未执行：对 Orca daemon 发 HTTP；改上游内核；写入密钥或把服务绑到公网。
+
+## 2026-10-10 02
+
+- 动作：按评审修改同一分支。启动说明改为 `python -m orca_mvc.api` / `python -m orca_mvc.mcp_server`；`[mvc]` 收紧为 `mcp>=2,<3`；daemon 501 的 mapping 文案改为 `DAEMON_NOT_WIRED`；未知 SiLA Feature 返回 422；CORS `allow_headers` 改为 `Accept` 与 `Content-Type`。  
+  影响：仍不改 `src/orca`，仍不向 daemon 发请求。  
+  回滚：git 还原本次提交。

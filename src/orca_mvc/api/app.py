@@ -63,7 +63,7 @@ def create_app(plane: ControlPlane | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=_cors_origins(),
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["*"],
+        allow_headers=["Accept", "Content-Type"],
     )
 
     @app.exception_handler(ControlPlaneError)

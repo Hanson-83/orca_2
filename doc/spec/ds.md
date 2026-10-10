@@ -295,14 +295,15 @@ tests/
 ## 7. 启动说明（设计期望，实现后写入项目 README）
 
 ```bash
-# 后端控制面
-python -m orca_mvc.api.app   # 或 uvicorn orca_mvc.api.app:app --port 8100
+# 后端控制面，127.0.0.1:8100
+PYTHONPATH=src python -m orca_mvc.api
+# 等价：PYTHONPATH=src uvicorn orca_mvc.api.app:app --host 127.0.0.1 --port 8100
 
-# MCP（另终端）
-python -m orca_mvc.mcp.server
+# MCP（另终端，默认 stdio，不监听端口）
+PYTHONPATH=src python -m orca_mvc.mcp_server
 
 # 前端
-cd frontend_mvc && npm install && npm run dev
+cd web && npm install && npm run dev
 ```
 
 ## 8. 测试设计要点
@@ -325,3 +326,4 @@ cd frontend_mvc && npm install && npm run dev
 | 版本 | 日期 | 说明 |
 |------|------|------|
 | 0.1 | 2026-10-10 | 首版 MVC 扩展设计，指导 Phase1 实现 |
+| 0.2 | 2026-10-10 | 启动入口与实现对齐：`python -m orca_mvc.api`、`python -m orca_mvc.mcp_server`、`web/` |

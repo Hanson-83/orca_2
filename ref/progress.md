@@ -35,8 +35,8 @@
 | T6 | SiLA2/ROS2 mock | 完成 | 健康检查 + 模拟调用 |
 | T7 | MCP Server | 完成 | 官方 `mcp` 2.x `MCPServer`，stdio |
 | T8 | 前端 Web | 完成 | `web/`，Vite + TypeScript，`5173` |
-| T9 | pytest + README | 完成 | `tests/orca_mvc` 14 通过；见 `src/orca_mvc/README.md` |
-| T10 | Reviewer 审核 | 待办 | 编码后由人审核 |
+| T9 | pytest + README | 完成 | `tests/orca_mvc` 20 通过；见 `src/orca_mvc/README.md`。CI 须安装 `[mvc]` |
+| T10 | Reviewer 审核 | 进行中 | 已按意见补 SSE / lifespan / daemon 501、未知 SiLA Feature 拒绝，并取消 PR 草稿 |
 
 ## 3. 问题汇总
 
@@ -71,6 +71,6 @@ Phase2 / Phase3 见 `ref/plan.md`。Phase1 编码、pytest 与前端构建已完
 - [x] SiLA2 / ROS2 mock 健康检查与模拟调用  
 - [x] MCP tools：`list_tasks`、`submit_task`、`get_status`  
 - [x] 前端独立端口展示任务列表与 workcell 状态  
-- [x] pytest 关键路径通过（14）  
+- [x] pytest 关键路径通过（20）  
 - [x] README 启动说明可跟做  
 - [x] 未改上游 `src/orca` 预约 / 死锁 / SystemMap 内核

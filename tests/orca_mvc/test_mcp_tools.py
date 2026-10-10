@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 
 import httpx
-import pytest
 
 from orca_mvc.mcp_server.client import ControlPlaneClient
 
@@ -31,9 +30,18 @@ async def test_client_submit_returns_task_id(client: httpx.AsyncClient) -> None:
     assert {cell["id"] for cell in cells} >= {"cell_a", "cell_b"}
 
 
+def test_mcp_sdk_is_installed() -> None:
+    """缺包必须失败。CI 安装 [mvc]（mcp>=2,<3），不要靠 skip 把这条盖住。"""
+    from mcp.server.mcpserver import MCPServer
+
+    assert MCPServer.__name__ == "MCPServer"
+
+
 async def test_mcp_server_tools(client: httpx.AsyncClient) -> None:
-    pytest.importorskip("mcp")
+    from mcp.server.mcpserver import MCPServer
     from orca_mvc.mcp_server.server import build_server
+
+    assert MCPServer.__name__ == "MCPServer"
 
     server = build_server(client=ControlPlaneClient(http=client))
     names = [tool.name for tool in await server.list_tools()]

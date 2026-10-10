@@ -9,10 +9,10 @@
 控制面使用仓库里已有的 `fastapi`、`uvicorn`、`pydantic`、`httpx`。MCP 是可选额外依赖：
 
 ```bash
-python -m pip install 'mcp>=1.9,<3'
+python -m pip install 'mcp>=2,<3'
 ```
 
-或在安装本仓库时加上 extra：`pip install -e '.[mvc]'`。整包安装会拉取上游驱动栈；只跑控制面时把 `src` 放进 `PYTHONPATH` 即可。
+或在安装本仓库时加上 extra：`pip install -e '.[mvc]'`。`[mvc]` 会装上 `mcp>=2,<3`。1.x 没有 `MCPServer`，不能用。整包安装会拉取上游驱动栈；只跑控制面时把 `src` 放进 `PYTHONPATH` 即可。
 
 MCP SDK 2.x 里，原来的 `FastMCP` 已改名为 `MCPServer`（`mcp.server.mcpserver`）。本包按 2.x 编写。
 
@@ -87,10 +87,13 @@ Phase 2 再用 `ORCA_DAEMON_URL` 指向这个地址。当前骨架即使设置�
 ## 测试
 
 ```bash
+python -m pip install 'mcp>=2,<3'   # 或 pip install -e '.[mvc]'
 python -m pytest tests/orca_mvc --confcutdir=tests/orca_mvc
 ```
 
 `--confcutdir` 用来跳过 `tests/conftest.py`。那个文件会导入上游 `orca`，而控制面测试不需要驱动栈。用例自己把 `src` 加进 `sys.path`。
+
+CI 必须安装 `[mvc]`。MCP 用例直接导入 `mcp.server.mcpserver.MCPServer`，缺包时失败，不会 `importorskip` 跳过。
 
 ## 目录
 

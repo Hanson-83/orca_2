@@ -94,17 +94,17 @@
 
 ## 9. 验收标准（总览）
 
-见 `doc/spec/urs.md` 与下文清单；全部 Phase1 验收项勾选且文档索引可读即本轮需求达标。
+见 `doc/spec/urs.md` 与下文清单。Phase1 验收已完成，与 `ref/progress.md` 第 7 节一致。
 
 ### Phase1 验收清单
 
-- [ ] 调研专报已入库且含证据 URL 与 mermaid  
-- [ ] intent/requirement/plan/urs/ds/progress/README 齐全  
-- [ ] `orca_mvc`（或约定包名）可安装/可导入  
-- [ ] 双任务并行提交与状态 API 演示通过  
-- [ ] 双 workcell 拓扑加载与查询通过  
-- [ ] SiLA2/ROS2 mock 健康检查通过  
-- [ ] MCP tools 冒烟通过  
-- [ ] 前端独立端口可打开并显示任务/cell  
-- [ ] pytest 关键路径绿  
-- [ ] README 启动步骤可跟做  
+- [x] 调研专报已入库且含证据 URL 与 mermaid  
+- [x] intent/requirement/plan/urs/ds/progress/README 齐全  
+- [x] `orca_mvc`（或约定包名）可安装/可导入  
+- [x] 双任务并行提交与状态 API 演示通过  
+- [x] 双 workcell 拓扑加载与查询通过  
+- [x] SiLA2/ROS2 mock 健康检查通过  
+- [x] MCP tools 冒烟通过  
+- [x] 前端独立端口可打开并显示任务/cell  
+- [x] pytest 关键路径绿  
+- [x] README 启动步骤可跟做  

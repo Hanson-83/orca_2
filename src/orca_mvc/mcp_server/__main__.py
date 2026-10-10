@@ -14,7 +14,7 @@ def main() -> None:
         from orca_mvc.mcp_server.server import build_server
     except ModuleNotFoundError:
         print(
-            "未安装 MCP SDK。执行：python -m pip install 'mcp>=1.9,<3'",
+            "未安装 MCP SDK。执行：python -m pip install 'mcp>=2,<3'（或 pip install -e '.[mvc]'）",
             file=sys.stderr,
         )
         raise SystemExit(1) from None
@@ -23,7 +23,7 @@ def main() -> None:
         server = build_server(api_url)
     except ModuleNotFoundError:
         print(
-            "未安装 MCP SDK。执行：python -m pip install 'mcp>=1.9,<3'",
+            "未安装 MCP SDK。执行：python -m pip install 'mcp>=2,<3'（或 pip install -e '.[mvc]'）",
             file=sys.stderr,
         )
         raise SystemExit(1) from None

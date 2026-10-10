@@ -50,9 +50,10 @@ dev = [
     "types-setuptools",
     "black",
 ]
-# Phase1 MVC 控制面的 MCP Server。不放进主依赖，避免上游安装被 MCP SDK 拖重。
+# Phase1 MVC 的 MCP Server。2.x 才有 MCPServer；1.x 的 FastMCP 已删除。
+# 跑 tests/orca_mvc 前必须安装本 extra，用例不会 skip 掉缺包。
 mvc = [
-    "mcp>=1.9,<3",
+    "mcp>=2,<3",
 ]
 
 # override pylabrobot[fw]'s libusb_package<=1.0.26.2 cap (no cp312 wheel)
