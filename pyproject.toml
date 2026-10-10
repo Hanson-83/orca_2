@@ -50,6 +50,10 @@ dev = [
     "types-setuptools",
     "black",
 ]
+# Phase1 MVC 控制面的 MCP Server。不放进主依赖，避免上游安装被 MCP SDK 拖重。
+mvc = [
+    "mcp>=1.9,<3",
+]
 
 # override pylabrobot[fw]'s libusb_package<=1.0.26.2 cap (no cp312 wheel)
 [tool.uv]
@@ -68,3 +72,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
+"orca_mvc" = ["scenarios/*.json"]

@@ -1,0 +1,28 @@
+{
+  "id": "cluster_demo",
+  "workcells": [
+    {
+      "id": "cell_a",
+      "name": "Workcell A",
+      "devices": ["shaker_a", "sealer_a", "lh_a"],
+      "transporters": ["arm_a"],
+      "status": "idle"
+    },
+    {
+      "id": "cell_b",
+      "name": "Workcell B",
+      "devices": ["reader_b", "shaker_b"],
+      "transporters": ["arm_b"],
+      "status": "idle"
+    }
+  ],
+  "links": [
+    {
+      "from_cell": "cell_a",
+      "to_cell": "cell_b",
+      "link_type": "translator",
+      "link_id": "bridge_ab",
+      "supports_deadlock_parking": false
+    }
+  ]
+}
