@@ -22,3 +22,6 @@ tests/logs/
 CLAUDE.local.md
 
 uv.lock
+node_modules/
+web/dist/
+web/.vite/
