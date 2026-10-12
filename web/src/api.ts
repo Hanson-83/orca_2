@@ -1,4 +1,21 @@
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "").replace(/\/$/, "");
+const TOKEN_KEY = "orca_mvc_api_token";
+
+export function apiToken(): string {
+  const fromEnv = (import.meta.env.VITE_ORCA_MVC_API_TOKEN ?? "").trim();
+  if (fromEnv) {
+    return fromEnv;
+  }
+  try {
+    return (localStorage.getItem(TOKEN_KEY) ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function saveApiToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token.trim());
+}
 
 export type TaskStatus = "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
 
@@ -61,7 +78,12 @@ export interface AdapterHealth {
 export interface Health {
   status: string;
   runtime: string;
+  runtime_backend: string;
+  daemon_reachable: boolean;
+  daemon_url: string | null;
   auth: string;
+  auth_required: boolean;
+  auth_configured: boolean;
   version: string;
 }
 
@@ -73,11 +95,13 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = apiToken();
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
@@ -103,5 +127,7 @@ async function readError(response: Response): Promise<string> {
 }
 
 export function eventSource(): EventSource {
-  return new EventSource(`${API_BASE}/api/v1/events`);
+  const token = apiToken();
+  const query = token ? `?token=${encodeURIComponent(token)}` : "";
+  return new EventSource(`${API_BASE}/api/v1/events${query}`);
 }

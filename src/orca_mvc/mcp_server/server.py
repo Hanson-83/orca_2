@@ -21,9 +21,11 @@ def build_server(api_url: str = "http://127.0.0.1:8100", client: ControlPlaneCli
     server = MCPServer(
         "orca-mvc",
         instructions=(
-            "Orca MVC Phase1 控制面工具。只应在本机使用，服务没有认证。"
+            "Orca MVC 控制面工具。只应在本机使用。"
+            "若控制面设置了 ORCA_MVC_API_TOKEN，本客户端会带上 Bearer。"
             "不要把 MCP 或控制面暴露到公网。"
-            "submit_task 会创建任务并立刻提交；执行面默认是模拟时间线。"
+            "submit_task 会创建任务并立刻提交。"
+            "默认执行面是模拟时间线；ORCA_MVC_RUNTIME=daemon 时交给本机 Orca daemon。"
         ),
     )
 

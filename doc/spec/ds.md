@@ -327,3 +327,42 @@ cd web && npm install && npm run dev
 |------|------|------|
 | 0.1 | 2026-10-10 | 首版 MVC 扩展设计，指导 Phase1 实现 |
 | 0.2 | 2026-10-10 | 启动入口与实现对齐：`python -m orca_mvc.api`、`python -m orca_mvc.mcp_server`、`web/` |
+| 0.3 | 2026-10-12 | Phase 2：daemon HTTP 客户端、Bearer、SiLA2/ROS2 sim。见第 11 节。第 2.6 节里「默认端口 8000」作废 |
+
+## 11. Phase 2 设计补记
+
+Phase 1 的 `OrcaDaemonBackend` 只记账、不发 HTTP。Phase 2 按 daemon 源码发请求，仍然不改 `src/orca`。
+
+### 11.1 地址与 run_mode
+
+1. `ORCA_DAEMON_URL`（若设置）  
+2. 否则 `ORCA_DAEMON_HOME/daemon.json` 或 `~/.orca/daemon.json` 的 `port`，拼成 `http://127.0.0.1:{port}`  
+3. 都没有则 base_url 为空，提交返回 503，不猜测端口  
+
+`MOCK` → `PURE_SIM`。`DEVICE_SIM` 与 `LIVE` 原样。`variables` 只允许 str/int/float/bool。
+
+状态：`accepting|draining|stopping|running` → `running`；`aborted` → `cancelled`。
+
+停止：`POST /operations/stop-execution` 先 `confirm=false`，若返回 `armed` 再 `confirm=true`。
+
+### 11.2 健康检查
+
+`GET /api/v1/health` 增加 `runtime_backend`、`daemon_reachable`、`daemon_url`、`auth`、`auth_required`、`auth_configured`。可达的定义是 daemon `GET /health` 且 `daemon=="ok"`。
+
+### 11.3 认证
+
+`ORCA_MVC_API_TOKEN` + `Authorization: Bearer`。默认在回环地址上不强制，并打警告。`ORCA_MVC_AUTH=required` 或 `ORCA_MVC_HOST` 非回环时强制。健康检查与 OpenAPI 文档不要求令牌。SSE 允许 `?token=`，其它路由不读查询参数。MCP 客户端转发同一个环境变量。不做 OAuth。
+
+### 11.4 适配器 mode
+
+| 实现 | mode | 说明 |
+|------|------|------|
+| `Sila2MockAdapter` / `Ros2MockAdapter` | `mock` | 纯内存，保留 |
+| `Sila2SimAdapter` | `sim` | HTTP stub：`GET /sila/v1/features`，`POST /sila/v1/features/{feature}/commands/{command}`，响应含 `commandExecutionUUID` 与 `executionStatus` |
+| `Ros2SimAdapter` | `sim` | 回放 jsonl，进程内 topic/service 信封。rclpy 只是可选旁路 |
+
+控制面默认用 sim 适配器。这不是已认证的 SiLA2 服务器，也不是 ROS 图。
+
+### 11.5 测试
+
+daemon 客户端用 `httpx.MockTransport`。可选用例在 daemon 未运行时 skip。收集测试时加 `--confcutdir=tests/orca_mvc`。

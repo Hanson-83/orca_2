@@ -20,4 +20,22 @@
 
 ### 控制面的 MOCK 不是 daemon 的 run_mode
 
-daemon 只接受 `PURE_SIM`、`DEVICE_SIM`、`LIVE`。Phase 2 接线时要做显式映射，不能把 `MOCK` 原样放进 `POST /executions`。
+daemon 只接受 `PURE_SIM`、`DEVICE_SIM`、`LIVE`。`OrcaDaemonBackend.map_control_run_mode` 把 `MOCK` 固定写成 `PURE_SIM`。不要在三个合法值里再猜一个。
+
+## 2026-10-12 Orca MVC Phase 2
+
+### 不要为了读端口去 import orca.daemon
+
+`lifecycle.py` 会带上 psutil 以及更上游的运行时。控制面只需要 JSON 里的 `port`。在 `daemon_backend.py` 里自己解析 `daemon.json`，测试才能继续 `--confcutdir=tests/orca_mvc`。
+
+### stop 必须两步
+
+`confirm=true` 在尚未 armed 时不会 abort，只会暂停并把 abort 置为 armed。客户端取消要先 `confirm=false`，看到 `status=armed` 再 `confirm=true`。
+
+### EventSource 不能加 Authorization
+
+令牌放在 `GET /api/v1/events?token=`。其它路由不要读这个查询参数，避免访问日志里到处都是令牌。httpx 的 ASGITransport 会把 SSE 缓冲到连接结束，测 SSE 要用原始 ASGI，读到 hello 就断开。
+
+### sim 不要标成 mock，也不要标成 live
+
+进程内 stub 和消息总线是模拟线协议，`mode=sim`。纯内存日志才是 `mock`。rclpy 即使 import 成功，也没有机械臂，健康字段可以写 `message-bus+rclpy`，mode 仍是 sim。

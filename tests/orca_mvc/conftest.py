@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 import httpx
+import pytest
 import pytest_asyncio
 
 _SRC = Path(__file__).resolve().parents[2] / "src"
@@ -18,6 +19,19 @@ if str(_SRC) not in sys.path:
 
 from orca_mvc.api.app import create_app
 from orca_mvc.services.control_plane import ControlPlane
+
+
+@pytest.fixture(autouse=True)
+def isolate_mvc_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """单测不碰开发者本机的 daemon.json，也不继承令牌。"""
+
+    monkeypatch.delenv("ORCA_DAEMON_URL", raising=False)
+    monkeypatch.delenv("ORCA_MVC_API_TOKEN", raising=False)
+    monkeypatch.delenv("ORCA_MVC_AUTH", raising=False)
+    monkeypatch.delenv("ORCA_MVC_SILA2_URL", raising=False)
+    monkeypatch.setenv("ORCA_MVC_ROS2", "bus")
+    monkeypatch.setenv("ORCA_MVC_HOST", "127.0.0.1")
+    monkeypatch.setenv("ORCA_DAEMON_HOME", str(tmp_path / "empty-orca-home"))
 
 
 @pytest_asyncio.fixture

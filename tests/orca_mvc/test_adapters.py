@@ -65,7 +65,10 @@ async def test_ros2_mock_publish_and_service() -> None:
 async def test_http_adapter_calls(client: httpx.AsyncClient) -> None:
     health = (await client.get("/api/v1/adapters")).json()
     assert health["sila2"]["status"] == "online"
-    assert health["ros2"]["mode"] == "mock"
+    assert health["sila2"]["mode"] == "sim"
+    assert health["sila2"]["transport"] == "http-stub"
+    assert health["ros2"]["mode"] == "sim"
+    assert health["ros2"]["backend"] == "message-bus"
 
     sila = await client.post(
         "/api/v1/adapters/sila2/call",

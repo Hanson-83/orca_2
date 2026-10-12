@@ -150,6 +150,8 @@ input, select, textarea { padding: 0.45rem 0.55rem; }
 
 .row label { flex: 1; min-width: 8rem; }
 
+#token-form { margin: 0 0 0.8rem; max-width: 28rem; }
+
 @media (max-width: 860px) {
   .layout { grid-template-columns: 1fr; }
   header.top { flex-direction: column; align-items: flex-start; }
