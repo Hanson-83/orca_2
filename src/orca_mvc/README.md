@@ -49,32 +49,88 @@ PYTHONPATH=src uvicorn orca_mvc.api.app:app --host 127.0.0.1 --port 8100
 
 daemon 只绑 `127.0.0.1`。端口写在 `~/.orca/daemon.json` 的 `port`（目录可用 `ORCA_DAEMON_HOME` 改），**没有固定的 8000**。也可以用 `ORCA_DAEMON_URL` 覆盖，例如 `http://127.0.0.1:51293`。`ORCA_DAEMON_URL` 优先于 pid 文件。
 
-控制面任务的 `run_mode=MOCK` 会显式映射成 daemon 的 `PURE_SIM` 再 `POST /executions`。`DEVICE_SIM` 和 `LIVE` 原样转发。`LIVE` 需要已经装好的设备和人工确认，这一阶段不要用它做演示。
+控制面任务的 `run_mode=MOCK` 会显式映射成 daemon 的 `PURE_SIM` 再 `POST /executions`。`DEVICE_SIM` 和 `LIVE` 原样转发。下面这套夹具把读板机、封膜机、振荡器和机械臂的 `sim_override` 钉在 `PURE_SIM`，就算误提交 `LIVE` 也不会改走真机驱动。不要拿它做硬件演示。
+
+`orca workflow load` 一次只登记一个 `build_workflow(topology)`。预注册协议是 `plate_readout` 和 `seal_and_shake`，所以要 load 两次。夹具在 `examples/mvc_daemon_sim/`，不依赖 `tests.test_helpers`。
+
+**必须在仓库根目录执行 `orca start`。** daemon 用 `import` 解析 `module:factory`，搜索的是启动时的当前目录和已安装包。`examples/` 不在 `setuptools` 的 `src` 包里，`pip install -e .` 不会把它装进 site-packages。换一个目录启动 daemon，mount 会 404。
+
+已经 mount 过时先 `orca unload`，否则第二次 mount 返回 409。同名 workflow 再 load 一次也是 409。
+
+动作在设备调用之后 `asyncio.sleep` 约 8 秒（`examples/mvc_daemon_sim/specs.py` 的 `ACTION_HOLD_SECONDS`），给列出执行和两段式停止留窗口。不是小时级实验。
+
+板从 `pad` 出发再回到 `pad`。一次执行结束或被 abort 之后，板还占着起点，下一次提交会 409，`detail.code` 是 `start_location_occupied`。冒烟脚本在停止之后调用 `POST /labware/runtime/clear-all`（`{"force": true}`）。手工清场：
 
 ```bash
-# 终端 A：需要已安装的 orca CLI 与驱动栈。本仓库的控制面测试不启动这个进程。
-orca start
-orca topology mount '<module:build_topology>' --sim
-orca workflow load '<module:build_workflow>'
-
-# 终端 B：控制面改走 daemon。地址从 daemon.json 读。
-ORCA_MVC_RUNTIME=daemon PYTHONPATH=src python -m orca_mvc.api
+orca labware clear-all --yes
 ```
 
-`POST /executions` 的 `workflow_name` 来自协议映射。预注册的名字是 `plate_readout` 和 `seal_and_shake`。daemon 里没有同名 WorkflowTemplate 时，提交会失败（控制面 502，任务 `failed`），这不是网络没接上。
+### Linux / macOS（bash，仓库根目录）
 
-没有 daemon 进程时不要设 `ORCA_MVC_RUNTIME=daemon`。设了但没有地址，提交返回 503 `DAEMON_UNAVAILABLE`，不会猜端口。健康检查里的 `daemon_reachable` 表示 `GET /health` 是否返回 `{"daemon":"ok"}`。
+```bash
+# 终端 A。需要已安装的 orca CLI 与驱动栈。控制面测试不会启动这个进程。
+orca start
+orca topology mount examples.mvc_daemon_sim:build_topology --sim
+orca workflow load examples.mvc_daemon_sim.plate_readout:build_workflow
+orca workflow load examples.mvc_daemon_sim.seal_and_shake:build_workflow
+
+# 终端 B。已 pip install -e . 时可以不设 PYTHONPATH。
+ORCA_MVC_RUNTIME=daemon PYTHONPATH=src python -m orca_mvc.api
+
+# 终端 C。健康检查、提交 plate_readout、列出执行、两段式 stop。
+PYTHONPATH=src python -m examples.mvc_daemon_sim.smoke
+```
+
+### Windows PowerShell（仓库根目录）
+
+```powershell
+orca start
+orca topology mount examples.mvc_daemon_sim:build_topology --sim
+orca workflow load examples.mvc_daemon_sim.plate_readout:build_workflow
+orca workflow load examples.mvc_daemon_sim.seal_and_shake:build_workflow
+
+$env:ORCA_MVC_RUNTIME = "daemon"
+$env:PYTHONPATH = "src"
+python -m orca_mvc.api
+
+$env:PYTHONPATH = "src"
+python -m examples.mvc_daemon_sim.smoke
+```
+
+### Windows cmd.exe（仓库根目录）
+
+```bat
+orca start
+orca topology mount examples.mvc_daemon_sim:build_topology --sim
+orca workflow load examples.mvc_daemon_sim.plate_readout:build_workflow
+orca workflow load examples.mvc_daemon_sim.seal_and_shake:build_workflow
+
+set ORCA_MVC_RUNTIME=daemon
+set PYTHONPATH=src
+python -m orca_mvc.api
+
+set PYTHONPATH=src
+python -m examples.mvc_daemon_sim.smoke
+```
+
+`python` 不在 PATH 上、只有 Python 启动器时，把上面的 `python` 换成 `py -3`。`orca` 来自 `pip install -e .` 装好的 Scripts。
+
+`POST /executions` 的 `workflow_name` 来自协议映射，名字就是 `plate_readout` 和 `seal_and_shake`。daemon 里没有同名 WorkflowTemplate 时，提交会失败（控制面 502，任务 `failed`），这不是网络没接上。
+
+没有 daemon 进程时不要设 `ORCA_MVC_RUNTIME=daemon`。设了但没有地址，提交返回 503 `DAEMON_UNAVAILABLE`，不会猜端口。健康检查里的 `daemon_reachable` 表示 `GET /health` 是否返回 `{"daemon":"ok"}`。冒烟脚本还要求 `runtime` 是 `orca-daemon`。控制面若开了 Bearer，冒烟进程要带同一个 `ORCA_MVC_API_TOKEN`。
+
+冒烟成功时打印 `execution_ref`、`stop confirm=false -> armed`、`stop confirm=true -> aborted`，以及控制面任务变成 `cancelled`。两段式 stop 打的是 daemon 的 `POST /operations/stop-execution`，和控制面 `POST /api/v1/tasks/{id}/cancel` 里 `OrcaDaemonBackend.cancel` 的顺序一样。
 
 ### 仍然需要活着的 daemon 才能演示的部分
 
-单元测试用 `httpx.MockTransport`，不启动 daemon。下面这些只有本机 `orca start` 并且拓扑和 workflow 已经挂上之后才能看到：
+单元测试用 `httpx.MockTransport`，不启动 daemon。下面这些只有按上面的命令挂上拓扑和两条 workflow 之后才能看到：
 
 - 控制面提交后，daemon 里出现一条真实 execution id
 - `GET /operations/list-executions` 能列出这条执行
-- 取消任务时两段式 `POST /operations/stop-execution`（先 `confirm=false` armed，再 `confirm=true` abort）
+- 两段式 `POST /operations/stop-execution`（先 `confirm=false` armed，再 `confirm=true` abort）
 - 健康检查 `daemon_reachable: true`
 
-可选集成测试 `tests/orca_mvc/test_daemon_live.py` 只打 `GET /health`。daemon 没起来就 skip。
+`tests/orca_mvc/test_daemon_live.py`：没有 daemon 就 skip。daemon 在跑但没有这两条 workflow 时，提交用例也 skip。两者都具备时，会通过控制面提交 `plate_readout`、列出执行、再 `cancel`（内部两段式 stop）。离线 CI 不跑这段。
 
 ## 这一阶段实际做了什么
 
@@ -173,7 +229,7 @@ python -m pytest tests/orca_mvc --confcutdir=tests/orca_mvc
 
 `--confcutdir` 用来跳过 `tests/conftest.py`。那个文件会导入上游 `orca`，而控制面测试不需要驱动栈。用例自己把 `src` 加进 `sys.path`。
 
-daemon 客户端测试使用 `httpx.MockTransport`，不要求 daemon 进程。`test_daemon_live.py` 在 daemon 未运行时 skip。CI 必须安装 `[mvc]`。MCP 用例直接导入 `mcp.server.mcpserver.MCPServer`，缺包时失败，不会 `importorskip` 跳过。
+daemon 客户端测试使用 `httpx.MockTransport`，不要求 daemon 进程。`test_daemon_live.py` 在 daemon 未运行、或未挂上 `plate_readout` / `seal_and_shake` 时 skip。`test_daemon_sim_recipe.py` 只检查配方字符串和 README，不导入 orca。CI 必须安装 `[mvc]`。MCP 用例直接导入 `mcp.server.mcpserver.MCPServer`，缺包时失败，不会 `importorskip` 跳过。
 
 ## 目录
 
@@ -190,4 +246,5 @@ src/orca_mvc/
   scenarios/     cluster_two_cells.json、ros2_trace.jsonl
 web/             Vite + TypeScript 前端
 tests/orca_mvc/  pytest
+examples/mvc_daemon_sim/   本机 PURE_SIM 拓扑与两条短 workflow
 ```

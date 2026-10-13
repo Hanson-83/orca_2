@@ -1,7 +1,7 @@
 # 进度状态（progress.md）
 
 > 路径约定：`ref/progress.md`  
-> 更新日期：2026-10-12
+> 更新日期：2026-10-13
 
 ## 1. 总体状态
 
@@ -9,7 +9,8 @@
 |--------|------|
 | Phase0 调研与文档 | **已完成**（文档已落入仓库） |
 | Phase1 MVC 编码 | **已完成**（`cursor/orca-mvc-phase1-93bf`） |
-| Phase2 本机 daemon / 令牌 / sim 适配 | **已完成**（本分支 `cursor/orca-mvc-phase2-daemon-2164`）。无物理设备 |
+| Phase2 本机 daemon / 令牌 / sim 适配 | **已完成**（`cursor/orca-mvc-phase2-daemon-2164`）。无物理设备 |
+| Phase2A PURE_SIM 可复制配方 | **本分支** `cursor/mvc-pure-sim-recipe-5d00`。夹具与冒烟命令已写入；活 daemon 端到端是否在本环境跑通见第 6 节 |
 | Phase3 集群优化调度 | 未开始 |
 
 交付索引（不单独放仓库根目录）：
@@ -40,14 +41,15 @@
 | T11 | OrcaDaemonBackend HTTP | 完成 | MockTransport 单测。`MOCK`→`PURE_SIM`。地址来自 `ORCA_DAEMON_URL` 或 `daemon.json` |
 | T12 | 本机 Bearer | 完成 | 令牌可选；`required` 或非回环则强制。MCP 转发同一令牌 |
 | T13 | SiLA2/ROS2 sim | 完成 | HTTP stub + 记录回放总线。`mode=sim`。无机器人 |
-| T14 | pytest + 文档 | 完成 | `tests/orca_mvc` 40 passed、1 skipped（活 daemon）。`--confcutdir=tests/orca_mvc` |
+| T14 | pytest + 文档 | 完成 | Phase2 基线。Phase2A 起见 T15 |
+| T15 | PURE_SIM 夹具与冒烟 | 完成 | `examples/mvc_daemon_sim/`。README 有从仓库根可复制的命令。Linux 上 CLI smoke 已通过。pytest 无 daemon 时 skip |
 
 ## 3. 问题汇总
 
 | ID | 描述 | 状态 |
 |----|------|------|
 | I1 | 上游 daemon 精确 REST 路径需对照源码 | **已核对并调用**。端口来自 `~/.orca/daemon.json` 或 `ORCA_DAEMON_URL`，没有固定 8000 |
-| I3 | 预注册协议名在未挂载的 daemon 上不存在 | 开放。提交会 502。演示前要 `orca workflow load` 出同名模板 |
+| I3 | 预注册协议名在未挂载的 daemon 上不存在 | 配方已有：`examples.mvc_daemon_sim` 的两次 `orca workflow load`。未挂载时提交仍 502 |
 | I2 | SSPL 对产品化形态的约束需法务确认 | 开放 |
 
 ## 4. 风险汇总
@@ -60,13 +62,13 @@
 
 ## 5. 后续行动
 
-1. 有驱动栈的环境里用 `orca start` + `topology mount --sim` + 同名 workflow 看一条真实 execution。单元测试替代不了这一步。  
+1. 在 Windows 上按 `src/orca_mvc/README.md` 再跑一遍同一组命令。本环境只在 Linux 上跑通过（见 `doc/test.md`）。  
 2. blocker / recovery 面板、OAuth、SiLA2 gRPC、ROS 真节点仍未做。  
 3. Phase 3 调度见 `ref/plan.md`。
 
 ## 6. 剩余工作
 
-Phase3 见 `ref/plan.md`。Phase2 的软件接线、pytest 与 README 已完成。活 daemon 上的端到端演示还没在本环境跑（没有 orca 进程，也没有驱动栈）。
+Phase3 见 `ref/plan.md`。Phase2 的软件接线和 Phase2A 的 PURE_SIM 配方、离线 pytest、README 命令已完成。Linux 上的 `orca start` → mount → 两次 load → 控制面 → smoke 已跑通，见 `doc/test.md`。Windows 上还没有跑过。
 
 ## 7. Phase1 验收
 

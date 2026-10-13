@@ -39,3 +39,25 @@ daemon 只接受 `PURE_SIM`、`DEVICE_SIM`、`LIVE`。`OrcaDaemonBackend.map_con
 ### sim 不要标成 mock，也不要标成 live
 
 进程内 stub 和消息总线是模拟线协议，`mode=sim`。纯内存日志才是 `mock`。rclpy 即使 import 成功，也没有机械臂，健康字段可以写 `message-bus+rclpy`，mode 仍是 sim。
+
+## 2026-10-13 PURE_SIM 夹具
+
+### `orca workflow load` 一次一个模板
+
+`POST /workflows` 调用 `build_workflow(topology)`，返回值必须是单个 `WorkflowTemplate`，响应里也只有一个 `workflow_name`。两条协议就要两个 `module:build_workflow`。不要写一个工厂指望它登记两个名字。
+
+### daemon 从启动时的当前目录导入
+
+`python -m orca.daemon` 把当前目录放进 `sys.path`。`examples/` 不在 `src` 的安装包里。`pip install -e .` 之后如果在别的目录 `orca start`，`examples.mvc_daemon_sim` 会 404。文档里的命令都从仓库根复制。
+
+### 纯模拟夹具要自己绑 SimDeviceFactory
+
+挂载时外层是 `RemoteDeviceFactory`。只靠 `--sim` 和提交 `PURE_SIM`，收尾的 `reset_world` 仍可能打到 live 槽并被拒绝（日志里是 PURE_SIM 不能进设备桥）。夹具在 `build_topology` 里 `use_device_factory(SimDeviceFactory())`，两个槽都是进程内驱动，再加 `sim_override=PURE_SIM`。
+
+### 板回到起点后，下一次提交会 409
+
+线程 `start` 和 `end` 都是 `pad`。执行完成或 abort 后板还在 pad 上，再提交同一条 workflow 得到 `start_location_occupied`。清场用 `POST /labware/runtime/clear-all`，body `{"force": true}`，或 `orca labware clear-all --yes`。
+
+### 包的 `__init__` 不要在导入时拉 orca
+
+`tests/orca_mvc` 用 `--confcutdir` 躲开上游 conftest。测试若 `import examples.mvc_daemon_sim`，父包一导入就执行。工厂放在 `__getattr__` 里，离线用例只读 `specs.py`。
