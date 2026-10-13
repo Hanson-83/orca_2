@@ -24,3 +24,10 @@
   影响：不修改 `src/orca`。默认执行面仍是 mock，本机默认不强制令牌。`ORCA_MVC_RUNTIME=daemon` 才会请求 daemon。  
   备份：修改前打包到 `/tmp/orca_mvc_phase2_backup/before.tar`（不提交）。回滚：git 还原本次提交。  
   未执行：启动真实 `orca` daemon；连接实验设备；写入令牌或密钥到仓库。
+
+## 2026-10-13 01
+
+- 动作：新增 `examples/mvc_daemon_sim/`（拓扑、`plate_readout`、`seal_and_shake`、冒烟脚本）。更新 `src/orca_mvc/README.md`、`ref/plan.md`、`ref/progress.md`、`tests/orca_mvc/test_daemon_live.py`，并加 `test_daemon_sim_recipe.py`。  
+  影响：不修改 `src/orca`。离线控制面测试仍不连接 daemon。冒烟脚本只在本机已有 daemon 和控制面时发 HTTP。  
+  备份：修改前的文档在 `/tmp/orca_mvc_phaseA_backup/`（不提交）。回滚：git 还原本次提交。  
+  未执行：连接实验设备；把密钥写入仓库。活 daemon 是否在本环境跑通，见 `doc/test.md`。

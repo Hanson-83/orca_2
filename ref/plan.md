@@ -2,7 +2,7 @@
 
 > 路径约定：`ref/plan.md`  
 > 基于：`ref/requirement.md`、`doc/spec/ds.md`  
-> 更新日期：2026-10-12
+> 更新日期：2026-10-13
 
 ## 1. 方案概述
 
@@ -60,7 +60,7 @@ flowchart TB
 | WP2.5 SiLA2 sim | 进程内 HTTP stub（`/sila/v1/features/...`），`mode=sim`。不是 gRPC，不连设备 | 已实现 |
 | WP2.6 ROS2 sim | 记录回放 + 进程内总线，`mode=sim`。`ORCA_MVC_ROS2=rclpy` 失败则退回总线 | 已实现 |
 | WP2.7 前端 | 执行面、daemon 可达、认证是否要求令牌；令牌来自 `VITE_ORCA_MVC_API_TOKEN` 或 localStorage | 已实现 |
-| WP2.8 测试 | MockTransport 覆盖提交/查询/两段式停止。活 daemon 只保留可选 skip 的 `/health` | 已实现 |
+| WP2.8 测试 | MockTransport 覆盖提交/查询/两段式停止。活 daemon 的 `/health` 以及（拓扑和两条 workflow 都在时）提交 / 列表 / 取消；否则 skip | 已实现 |
 
 **Phase2 出口**：pytest `tests/orca_mvc --confcutdir=tests/orca_mvc` 通过；README 写明 mock 与 `orca start` + `PURE_SIM` + `ORCA_MVC_RUNTIME=daemon` 的差别。
 
@@ -71,6 +71,19 @@ flowchart TB
 - OAuth2 / 多用户  
 - 前端 blocker / recovery 面板（SSE 在 Phase1 已有）  
 - 在未挂载 workflow 的 daemon 上假装 `plate_readout` 能跑完  
+
+### Phase 2A — 本机 PURE_SIM 可复制配方（本交付）
+
+Phase 2 的客户端能打到 daemon，但 README 里的 `orca topology mount '<module:build_topology>'` 不是能执行的入口。本段只加旁路夹具和文档，不改 `src/orca`。
+
+| 项 | 内容 |
+|----|------|
+| 夹具 | `examples/mvc_daemon_sim/`。`build_topology(stores)`；两条 workflow 各一个 `build_workflow`，名字是 `plate_readout`、`seal_and_shake`。动作用秒级 sleep，不用 `tests.test_helpers` |
+| 加载 | daemon 的 `POST /workflows` / `orca workflow load` 一次只登记一个模板，所以 load 两次 |
+| 冒烟 | `python -m examples.mvc_daemon_sim.smoke`：控制面 health 的 `daemon_reachable`、提交 `plate_readout`、`execution_ref`、`GET /operations/list-executions`、两段式 stop |
+| 测试 | 离线 pytest 不导入 orca。`test_daemon_live.py` 无 daemon 或未挂这两条 workflow 时 skip |
+
+`orca start` 必须在仓库根目录。`examples/` 不随 `pip install -e .` 进入 site-packages，daemon 只从启动时的当前目录导入这个 spec。
 
 ### Phase 2 任务明细
 

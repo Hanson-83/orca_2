@@ -28,6 +28,38 @@ PYTHONPATH=src python -m pytest tests/orca_mvc --confcutdir=tests/orca_mvc
 
 未跑：上游全量 `pytest tests`；对着活 daemon 提交 `plate_readout`。后者需要已挂载的拓扑和同名 workflow。
 
+## 2026-10-13 Phase 2A PURE_SIM 配方
+
+环境：Linux，Python 3.12。本机 `pip install -e '.[dev,mvc]'` 拉下了 `cheshire-drivers` 1.1.0。没有 Windows 机器，也没有实验设备。
+
+### 离线 pytest
+
+```bash
+python3 -m pytest tests/orca_mvc --confcutdir=tests/orca_mvc -q
+```
+
+结果：43 passed，2 skipped。skipped 是 `test_daemon_live.py` 的两条：当时还没有 daemon 进程（这条记录写在下面的 CLI 冒烟之前；冒烟结束后 daemon 已 `orca shutdown`）。
+
+### 进程内挂载
+
+用 daemon 的 `create_app`（不经 `orca start`）挂上 `examples.mvc_daemon_sim:build_topology`，load 两个 workflow。`plate_readout` 与 `seal_and_shake` 都能在 `PURE_SIM` 下跑到 `completed`。中途两段式 stop 返回 `armed` 然后 `aborted`。`POST /labware/runtime/clear-all` `{"force": true}` 之后可以再次提交。abort 时日志里有入口线程的 `CancelledError`，停止响应仍然是 aborted。
+
+### 真实 CLI（仓库根目录）
+
+```bash
+orca start
+orca topology mount examples.mvc_daemon_sim:build_topology --sim
+orca workflow load examples.mvc_daemon_sim.plate_readout:build_workflow
+orca workflow load examples.mvc_daemon_sim.seal_and_shake:build_workflow
+ORCA_MVC_RUNTIME=daemon python3 -m orca_mvc.api
+python3 -m examples.mvc_daemon_sim.smoke
+orca shutdown
+```
+
+这次 daemon 端口是 53257（不是 8000）。控制面 health：`runtime=orca-daemon`，`daemon_reachable=true`。smoke 打印的 `execution_ref` 是 `2289bc57-bb0f-4171-a1ca-65847616aecf`，`list-executions` 含这条，`stop confirm=false -> armed`，`stop confirm=true -> aborted`，任务状态 `cancelled`。随后 daemon 已停。
+
+未在 Windows 上执行这组命令。
+
 未跑上游全量 `pytest tests`：当前环境没有安装 `orca` 本体，且那次运行不在本阶段范围内。
 
 ### 前端构建

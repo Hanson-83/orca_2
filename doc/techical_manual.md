@@ -68,3 +68,25 @@ Phase 1 不会请求 daemon。`ORCA_MVC_RUNTIME=daemon` 时提交返回 HTTP 501
 - 回滚：git 还原本阶段提交。修改前的包副本在执行环境的 `/tmp/orca_mvc_phase2_backup/before.tar`（不进仓库）。
 
 第 2 节里「Phase 1 不会请求 daemon、`ORCA_MVC_RUNTIME=daemon` 返回 501」只描述 Phase 1。Phase 2 起，没有地址时是 503 `DAEMON_UNAVAILABLE`，有地址时会真正 POST。
+
+## 7. Phase 2A 本机 PURE_SIM 配方（2026-10-13）
+
+控制面协议名 `plate_readout`、`seal_and_shake` 要对上 daemon 里的 WorkflowTemplate。`examples/mvc_daemon_sim/` 提供：
+
+- `examples.mvc_daemon_sim:build_topology`
+- `examples.mvc_daemon_sim.plate_readout:build_workflow`
+- `examples.mvc_daemon_sim.seal_and_shake:build_workflow`
+
+`orca workflow load` 对应 `POST /workflows`，一次只接受一个返回 `WorkflowTemplate` 的工厂，所以是两次 load，不是一个工厂登记两个名字。
+
+拓扑是板位 `pad`、读板机、封膜机、振荡器、机械臂 `robot`。示教点经 `stores.teachpoints` / `stores.access_configs` 写入 daemon 传入的 store。构造设备时改绑 `SimDeviceFactory`（覆盖 daemon 挂载时的 `RemoteDeviceFactory`），两个驱动槽都是进程内 Sim*。`sim_override=PURE_SIM` 再挡一层。`--sim` 只影响 daemon 的诊断标记，提交时的 `run_mode` 仍由控制面把 `MOCK` 写成 `PURE_SIM`。
+
+线程从 `pad` 出发再回到 `pad`。跑完或 abort 之后板还在 `pad` 上，下一次提交会 409 `start_location_occupied`。冒烟在停止后 `POST /labware/runtime/clear-all`（`force=true`）。手工等价命令是 `orca labware clear-all --yes`。
+
+动作在设备调用后睡眠约 8 秒，便于两段式 stop。耗材用 `SimPlateTemplate`，不查 PLR 目录。
+
+冒烟脚本 `python -m examples.mvc_daemon_sim.smoke` 打控制面 `GET /api/v1/health`（要 `daemon_reachable` 且 `runtime=orca-daemon`），创建并提交 `plate_readout`，再对 daemon `GET /operations/list-executions` 和两次 `POST /operations/stop-execution`。包的 `__init__` 用懒加载，`import examples.mvc_daemon_sim` 不导入 orca，离线测试才能过。
+
+`orca start` 的工作目录必须是仓库根。可编辑安装不会把 `examples/` 放进 site-packages。
+
+回滚：git 还原本阶段提交。修改前的文档副本在 `/tmp/orca_mvc_phaseA_backup/`（不进仓库）。`src/orca` 无改动。
