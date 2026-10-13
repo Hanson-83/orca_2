@@ -1,7 +1,9 @@
 import "./styles.css";
 import {
   api,
+  apiToken,
   eventSource,
+  saveApiToken,
   type AdapterHealth,
   type ClusterView,
   type ExperimentTask,
@@ -32,8 +34,22 @@ if (!app) {
 
 const notice = el("p", { class: "notice", id: "notice" });
 const runtimePill = el("span", { class: "pill", id: "runtime-pill" }, ["执行面 …"]);
-const authPill = el("span", { class: "pill" }, ["无认证 · 仅本机"]);
+const authPill = el("span", { class: "pill", id: "auth-pill" }, ["认证 …"]);
 const streamPill = el("span", { class: "pill", id: "stream-pill" }, ["实时通道连接中"]);
+const tokenInput = el("input", {
+  id: "api-token",
+  type: "password",
+  autocomplete: "off",
+  placeholder: "Bearer 令牌",
+}) as HTMLInputElement;
+const tokenRow = el("form", { id: "token-form", class: "row" }, [
+  el("label", {}, ["API 令牌", tokenInput]),
+  el("button", { type: "submit" }, ["保存令牌"]),
+]);
+tokenRow.hidden = true;
+if (!import.meta.env.VITE_ORCA_MVC_API_TOKEN) {
+  tokenInput.value = apiToken();
+}
 const taskBody = el("tbody", { id: "task-body" });
 const workcellBoard = el("div", { class: "cards", id: "workcell-board" });
 const linkLine = el("p", { class: "muted", id: "link-line" }, ["链路加载中"]);
@@ -72,10 +88,13 @@ app.append(
     el("header", { class: "top" }, [
       el("div", {}, [
         el("h1", {}, ["Orca MVC 控制面"]),
-        el("p", {}, ["Phase 1 · 任务与工作单元。执行时间线是模拟的，尚未连接 Orca daemon。"]),
+        el("p", {}, [
+          "Phase 2 · 默认模拟执行。ORCA_MVC_RUNTIME=daemon 时把任务交给本机 Orca daemon（MOCK 映射为 PURE_SIM）。",
+        ]),
       ]),
       el("div", { class: "pills" }, [runtimePill, authPill, streamPill]),
     ]),
+    tokenRow,
     notice,
     el("div", { class: "layout" }, [
       el("section", { class: "panel" }, [
@@ -131,6 +150,14 @@ form.addEventListener("submit", (event) => {
   void submitTask();
 });
 
+tokenRow.addEventListener("submit", (event) => {
+  event.preventDefault();
+  saveApiToken(tokenInput.value);
+  notice.textContent = tokenInput.value.trim() ? "令牌已保存在本机浏览器" : "已清除本机保存的令牌";
+  connectStream();
+  void refresh();
+});
+
 transferForm.addEventListener("submit", (event) => {
   event.preventDefault();
   void requestTransfer();
@@ -142,14 +169,14 @@ async function refresh(): Promise<void> {
   if (refreshing) return;
   refreshing = true;
   try {
-    const [health, tasks, protocols, cluster, adapters] = await Promise.all([
-      api<Health>("/api/v1/health"),
+    const health = await api<Health>("/api/v1/health");
+    renderHealth(health);
+    const [tasks, protocols, cluster, adapters] = await Promise.all([
       api<ExperimentTask[]>("/api/v1/tasks"),
       api<ProtocolMapping[]>("/api/v1/protocols"),
       api<ClusterView>("/api/v1/cluster"),
       api<Record<string, AdapterHealth>>("/api/v1/adapters"),
     ]);
-    runtimePill.textContent = `执行面 ${health.runtime} · ${health.version}`;
     renderTasks(tasks);
     fillSelect(
       protocolSelect,
@@ -175,6 +202,23 @@ async function refresh(): Promise<void> {
   } finally {
     refreshing = false;
   }
+}
+
+function renderHealth(health: Health): void {
+  const backend = health.runtime_backend || health.runtime;
+  const reach = health.daemon_reachable ? "daemon 可达" : "daemon 不可达";
+  runtimePill.textContent = `执行面 ${backend} · ${reach} · ${health.version}`;
+  if (!health.auth_required) {
+    authPill.textContent = "认证未启用 · 仅本机";
+    tokenRow.hidden = true;
+    return;
+  }
+  tokenRow.hidden = false;
+  if (!health.auth_configured) {
+    authPill.textContent = "需要令牌 · 服务未配置";
+    return;
+  }
+  authPill.textContent = apiToken() ? "需要 Bearer · 已携带" : "需要 Bearer · 未填写";
 }
 
 function renderTasks(tasks: ExperimentTask[]): void {
@@ -232,7 +276,9 @@ function renderCluster(cluster: ClusterView): void {
 function renderAdapters(adapters: Record<string, AdapterHealth>): void {
   adapterBoard.replaceChildren(
     ...Object.values(adapters).map((adapter) => {
-      const button = el("button", { type: "button" }, [adapter.name === "sila2" ? "模拟 SiLA2 调用" : "模拟 ROS2 调用"]);
+      const button = el("button", { type: "button" }, [
+        adapter.name === "sila2" ? `调用 SiLA2（${adapter.mode}）` : `调用 ROS2（${adapter.mode}）`,
+      ]);
       button.addEventListener("click", () => {
         void callAdapter(adapter.name);
       });
@@ -330,8 +376,11 @@ function labelOf(value: string): string {
   return STATUS_LABEL[value] ?? value;
 }
 
+let source: EventSource | null = null;
+
 function connectStream(): void {
-  const source = eventSource();
+  source?.close();
+  source = eventSource();
   const bump = () => {
     void refresh();
   };

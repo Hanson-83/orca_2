@@ -73,4 +73,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "*" = ["py.typed"]
-"orca_mvc" = ["scenarios/*.json"]
+"orca_mvc" = ["scenarios/*.json", "scenarios/*.jsonl"]

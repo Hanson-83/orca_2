@@ -6,20 +6,31 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from orca_mvc.adapters.base import AdapterOffline
-from orca_mvc.adapters.ros2_mock import Ros2MockAdapter
-from orca_mvc.adapters.sila2_mock import Sila2MockAdapter, UnknownSilaFeature
+from orca_mvc.adapters.base import AdapterOffline, UnknownSilaCommand, UnknownSilaFeature
+from orca_mvc.adapters.ros2_sim import Ros2SimAdapter
+from orca_mvc.adapters.sila2_sim import Sila2SimAdapter
+from orca_mvc.auth import AuthPolicy
 from orca_mvc.models.cluster import CellLink, Cluster, ClusterView, Transfer, Workcell
 from orca_mvc.models.enums import RunMode, TaskStatus, TransferState, WorkcellStatus
 from orca_mvc.models.protocol import ProtocolMapping
 from orca_mvc.models.task import ExperimentTask
 from orca_mvc.runtime.base import RuntimeBackend
-from orca_mvc.runtime.daemon_backend import DAEMON_ROUTE_CATALOG, DaemonNotWired, OrcaDaemonBackend
+from orca_mvc.runtime.daemon_backend import (
+    DAEMON_ROUTE_CATALOG,
+    DaemonRequestError,
+    DaemonUnavailable,
+    DaemonVariableError,
+    OrcaDaemonBackend,
+    map_control_run_mode,
+    probe_daemon,
+    resolve_daemon_base_url,
+)
 from orca_mvc.runtime.mock_backend import MockRuntimeBackend
 from orca_mvc.store.memory import MemoryTaskStore
 
@@ -76,8 +87,9 @@ class ControlPlane:
         poll_interval: float = 0.1,
         transfer_step: float = 0.2,
         scenario_path: Path | None = None,
-        sila2: Sila2MockAdapter | None = None,
-        ros2: Ros2MockAdapter | None = None,
+        sila2: Sila2SimAdapter | None = None,
+        ros2: Ros2SimAdapter | None = None,
+        auth: AuthPolicy | None = None,
     ) -> None:
         self._backend = backend or MockRuntimeBackend(
             step_delay=step_delay,
@@ -92,11 +104,13 @@ class ControlPlane:
         }
         self._cluster: Cluster | None = None
         self._transfers: list[Transfer] = []
-        self._sila2 = sila2 or Sila2MockAdapter()
-        self._ros2 = ros2 or Ros2MockAdapter()
+        self._sila2 = sila2 or Sila2SimAdapter()
+        self._ros2 = ros2 or Ros2SimAdapter()
+        self.auth = auth or AuthPolicy.open()
         self._subscribers: list[asyncio.Queue[dict[str, Any]]] = []
         self._jobs: set[asyncio.Task[None]] = set()
         self._started = False
+        self._daemon_probe_cache: tuple[float, str | None, bool] | None = None
 
     @classmethod
     def from_env(cls) -> ControlPlane:
@@ -113,12 +127,17 @@ class ControlPlane:
                 "BAD_RUNTIME",
                 f"未知 ORCA_MVC_RUNTIME={runtime!r}，只接受 mock 或 daemon",
             )
+        try:
+            auth = AuthPolicy.from_env()
+        except ValueError as exc:
+            raise ControlPlaneError(500, "BAD_AUTH", str(exc)) from exc
         return cls(
             backend=backend,
             step_delay=step_delay,
             running_hold=running_hold,
             poll_interval=float(os.environ.get("ORCA_MVC_POLL_INTERVAL", "0.1")),
             transfer_step=float(os.environ.get("ORCA_MVC_TRANSFER_STEP", "0.2")),
+            auth=auth,
         )
 
     @property
@@ -134,7 +153,10 @@ class ControlPlane:
             self.load_cluster(payload)
         await self._sila2.connect()
         await self._ros2.connect()
-        logger.info("control plane ready runtime=%s", self.runtime_name)
+        warning = self.auth.startup_warning()
+        if warning:
+            logger.warning("%s", warning)
+        logger.info("control plane ready runtime=%s auth_required=%s", self.runtime_name, self.auth.required)
 
     async def shutdown(self) -> None:
         jobs = list(self._jobs)
@@ -222,33 +244,59 @@ class ControlPlane:
             task.status = TaskStatus.QUEUED
             task.updated_at = utcnow()
             daemon_selected = self._backend.name == "orca-daemon"
+            orca_submit: dict[str, Any] = {
+                "method": method,
+                "path": path,
+                "body_keys": ["workflow_name", "variables", "run_mode", "acknowledge_warnings"],
+                "phase": "calling" if daemon_selected else "not_called",
+                "reason": self._submit_reason(daemon_selected),
+            }
+            if daemon_selected:
+                orca_submit["wire_run_mode"] = map_control_run_mode(task.run_mode)
             task.mapping = {
                 "protocol_ref": protocol.name,
                 "workflow_template_name": protocol.workflow_template_name,
                 "run_mode": task.run_mode.value,
-                "orca_submit": {
-                    "method": method,
-                    "path": path,
-                    "body_keys": ["workflow_name", "variables", "run_mode"],
-                    "phase": "not_called",
-                    "reason": self._submit_reason(daemon_selected),
-                    **({"code": "DAEMON_NOT_WIRED"} if daemon_selected else {}),
-                },
+                "orca_submit": orca_submit,
             }
             pending = task.model_copy(deep=True)
 
         try:
             ref = await self._backend.submit(pending)
-        except DaemonNotWired as exc:
+        except DaemonVariableError as exc:
             await self._mark_failed(
                 task_id,
                 str(exc),
-                orca_reason=self._submit_reason(True),
-                orca_code="DAEMON_NOT_WIRED",
+                orca_reason=str(exc),
+                orca_phase="not_called",
+                orca_code="INVALID_VARIABLES",
             )
-            raise ControlPlaneError(501, "DAEMON_NOT_WIRED", str(exc)) from exc
+            raise ControlPlaneError(422, "INVALID_VARIABLES", str(exc)) from exc
+        except DaemonUnavailable as exc:
+            await self._mark_failed(
+                task_id,
+                str(exc),
+                orca_reason=str(exc),
+                orca_phase="unreachable" if exc.attempted else "not_called",
+                orca_code="DAEMON_UNAVAILABLE",
+            )
+            raise ControlPlaneError(503, "DAEMON_UNAVAILABLE", str(exc), retryable=True) from exc
+        except DaemonRequestError as exc:
+            await self._mark_failed(
+                task_id,
+                str(exc),
+                orca_reason=str(exc),
+                orca_phase="rejected",
+                orca_code="DAEMON_HTTP",
+            )
+            raise ControlPlaneError(
+                502,
+                "RUNTIME_SUBMIT_FAILED",
+                str(exc),
+                retryable=exc.status_code >= 500,
+            ) from exc
         except Exception as exc:
-            await self._mark_failed(task_id, str(exc))
+            await self._mark_failed(task_id, str(exc), orca_phase="rejected")
             logger.exception("submit failed task=%s", task_id)
             raise ControlPlaneError(502, "RUNTIME_SUBMIT_FAILED", str(exc), retryable=True) from exc
 
@@ -256,6 +304,11 @@ class ControlPlane:
             task = self._tasks.require_live(task_id)
             task.execution_ref = ref
             task.updated_at = utcnow()
+            submit = (task.mapping or {}).get("orca_submit")
+            if isinstance(submit, dict) and self._backend.name == "orca-daemon":
+                submit["phase"] = "submitted"
+                submit["execution_id"] = ref
+                submit["reason"] = "已调用 daemon POST /executions"
             snapshot = task.model_copy(deep=True)
         self._emit("task.updated", snapshot.model_dump(mode="json"))
         self._track(self._watch(task_id, ref))
@@ -281,8 +334,10 @@ class ControlPlane:
         if ref is not None:
             try:
                 await self._backend.cancel(ref)
-            except DaemonNotWired as exc:
-                raise ControlPlaneError(501, "DAEMON_NOT_WIRED", str(exc)) from exc
+            except DaemonUnavailable as exc:
+                raise ControlPlaneError(503, "DAEMON_UNAVAILABLE", str(exc), retryable=True) from exc
+            except DaemonRequestError as exc:
+                raise ControlPlaneError(502, "RUNTIME_CANCEL_FAILED", str(exc), retryable=True) from exc
             except KeyError:
                 logger.warning("cancel missing execution_ref=%s", ref)
         self._emit("task.updated", snapshot.model_dump(mode="json"))
@@ -342,6 +397,23 @@ class ControlPlane:
     def adapter_health(self) -> dict[str, dict[str, Any]]:
         return {"sila2": self._sila2.health(), "ros2": self._ros2.health()}
 
+    async def daemon_probe(self) -> tuple[str | None, bool]:
+        """执行面若自带探测就用它；否则按 daemon.json / ORCA_DAEMON_URL 探一次。"""
+
+        reporter = getattr(self._backend, "daemon_health", None)
+        if reporter is not None:
+            return await reporter()
+        url = resolve_daemon_base_url()
+        if not url:
+            return None, False
+        now = time.monotonic()
+        cached = self._daemon_probe_cache
+        if cached is not None and cached[1] == url and now - cached[0] < 1.5:
+            return url, cached[2]
+        reachable = await probe_daemon(url)
+        self._daemon_probe_cache = (now, url, reachable)
+        return url, reachable
+
     async def call_sila2(self, feature: str, command: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await self._sila2.call_command(feature, command, params)
@@ -352,6 +424,12 @@ class ControlPlane:
                 422,
                 "UNKNOWN_FEATURE",
                 f"未知 SiLA2 Feature：{exc.feature}",
+            ) from exc
+        except UnknownSilaCommand as exc:
+            raise ControlPlaneError(
+                422,
+                "UNKNOWN_COMMAND",
+                f"未知 SiLA2 Command：{exc.feature}/{exc.command}",
             ) from exc
         self._emit("adapter.called", {"name": "sila2", "command": command})
         return result
@@ -369,7 +447,7 @@ class ControlPlane:
                 if not topic:
                     raise ControlPlaneError(422, "BAD_REQUEST", "publish 需要 topic")
                 await self._ros2.publish(topic, payload)
-                result = {"kind": "publish", "topic": topic, "simulated": True}
+                result = {"kind": "publish", "topic": topic, "mode": "sim", "simulated": True}
             elif kind == "service":
                 if not service:
                     raise ControlPlaneError(422, "BAD_REQUEST", "service 调用需要 service")
@@ -431,6 +509,7 @@ class ControlPlane:
         *,
         orca_reason: str | None = None,
         orca_code: str | None = None,
+        orca_phase: str | None = None,
     ) -> None:
         async with self._tasks.lock:
             try:
@@ -443,9 +522,11 @@ class ControlPlane:
             task.error = message
             task.updated_at = utcnow()
             submit = (task.mapping or {}).get("orca_submit")
-            if orca_reason is not None and isinstance(submit, dict):
-                submit["reason"] = orca_reason
-                submit["phase"] = "not_called"
+            if isinstance(submit, dict) and (orca_reason is not None or orca_phase is not None or orca_code is not None):
+                if orca_reason is not None:
+                    submit["reason"] = orca_reason
+                if orca_phase is not None:
+                    submit["phase"] = orca_phase
                 if orca_code is not None:
                     submit["code"] = orca_code
             snapshot = task.model_copy(deep=True)
@@ -454,8 +535,8 @@ class ControlPlane:
     @staticmethod
     def _submit_reason(daemon_selected: bool) -> str:
         if daemon_selected:
-            return "daemon 尚未接线（DAEMON_NOT_WIRED），Phase1 不发出 HTTP"
-        return "Phase1 MockRuntimeBackend 只模拟时间线，不请求 daemon"
+            return "准备调用 daemon POST /executions；控制面 MOCK 会映射为 PURE_SIM"
+        return "MockRuntimeBackend 只模拟时间线，不请求 daemon"
 
     def _cluster_view(self) -> ClusterView:
         assert self._cluster is not None

@@ -53,4 +53,18 @@ Phase 1 不会请求 daemon。`ORCA_MVC_RUNTIME=daemon` 时提交返回 HTTP 501
 
 ## 5. 已知缺口
 
-无认证。状态在内存中，进程退出即丢失。没有真实 SiLA2 客户端，没有 rclpy，没有任务到 workcell 的优化分配。
+状态在内存中，进程退出即丢失。没有认证过的 SiLA2 gRPC 客户端，没有连着机械臂的 ROS 节点，没有任务到 workcell 的优化分配。默认仍可不设令牌（仅本机）。blocker / recovery 面板未做。
+
+## 6. Phase 2（2026-10-12）
+
+`OrcaDaemonBackend` 会发 HTTP。路由仍以第 2 节的表为准，并增加探测用的 `GET /health`（响应里 `daemon` 必须是 `ok`）。
+
+- 地址：`ORCA_DAEMON_URL`，否则读 `daemon.json` 的 `port`。不导入 `orca.daemon`，避免控制面测试拉起驱动栈。
+- `MOCK` 在客户端里写成 `PURE_SIM` 再放进 `POST /executions`。
+- 取消固定两步：`confirm=false`，返回 `armed` 后再 `confirm=true`。这是 `SystemRuntime.stop_execution` 的契约：单次 `confirm=true` 在尚未 armed 时只暂停。
+- 控制面默认仍是 Mock。`ORCA_MVC_RUNTIME=daemon` 才换客户端。健康检查同时给出后端名字和 daemon 是否可达。
+- 认证是共享密钥 Bearer，见 `src/orca_mvc/auth.py`。SSE 用查询参数，因为 EventSource 不能设请求头。
+- SiLA2 sim 的 stub 在 `adapters/sila2_stub.py`。ROS2 sim 回放 `scenarios/ros2_trace.jsonl`。`mode` 标 `sim`，不要标成 live。
+- 回滚：git 还原本阶段提交。修改前的包副本在执行环境的 `/tmp/orca_mvc_phase2_backup/before.tar`（不进仓库）。
+
+第 2 节里「Phase 1 不会请求 daemon、`ORCA_MVC_RUNTIME=daemon` 返回 501」只描述 Phase 1。Phase 2 起，没有地址时是 503 `DAEMON_UNAVAILABLE`，有地址时会真正 POST。

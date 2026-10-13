@@ -5,19 +5,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from orca_mvc.adapters.base import AdapterOffline
+from orca_mvc.adapters.base import AdapterOffline, UnknownSilaFeature
 
 logger = logging.getLogger("orca_mvc.adapters.sila2")
 
 _FEATURES = ("ShakerControl", "SealControl", "PlateReader")
 
-
-class UnknownSilaFeature(Exception):
-    """模拟目录里没有这个 Feature。控制面把它收成 4xx，而不是假装调用成功。"""
-
-    def __init__(self, feature: str) -> None:
-        self.feature = feature
-        super().__init__(f"unknown SiLA2 feature: {feature}")
+__all__ = ["Sila2MockAdapter", "UnknownSilaFeature"]
 
 
 class Sila2MockAdapter:

@@ -1,0 +1,2 @@
+{"op":"publish","topic":"/workcell/arm/state","type":"orca_mvc/JointState","data":{"pose":"home","source":"recorded"}}
+{"op":"publish","topic":"/workcell/arm/cmd","type":"orca_mvc/WorkcellCommand","data":{"cmd":"idle","source":"recorded"}}

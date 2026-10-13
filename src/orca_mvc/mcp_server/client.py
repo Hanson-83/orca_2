@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
@@ -24,9 +25,13 @@ class ControlPlaneClient:
         self,
         base_url: str = "http://127.0.0.1:8100",
         http: httpx.AsyncClient | None = None,
+        token: str | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._http = http
+        if token is None:
+            token = os.environ.get("ORCA_MVC_API_TOKEN", "")
+        self._token = token.strip() or None
 
     async def list_tasks(self, status: str | None = None) -> list[dict[str, Any]]:
         params = {"status": status} if status else None
@@ -73,11 +78,14 @@ class ControlPlaneClient:
         return cells
 
     async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        headers = dict(kwargs.pop("headers", {}) or {})
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
         if self._http is not None:
-            response = await self._http.request(method, path, **kwargs)
+            response = await self._http.request(method, path, headers=headers, **kwargs)
         else:
             async with httpx.AsyncClient(base_url=self.base_url, timeout=30.0) as client:
-                response = await client.request(method, path, **kwargs)
+                response = await client.request(method, path, headers=headers, **kwargs)
         if response.status_code >= 400:
             raise ControlPlaneClientError(response.status_code, response.text)
         return response.json()

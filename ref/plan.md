@@ -2,7 +2,7 @@
 
 > 路径约定：`ref/plan.md`  
 > 基于：`ref/requirement.md`、`doc/spec/ds.md`  
-> 更新日期：2026-10-10
+> 更新日期：2026-10-12
 
 ## 1. 方案概述
 
@@ -47,13 +47,40 @@ flowchart TB
 
 **Phase1 出口**：验收清单全部勾选。
 
-### Phase 2 — 深化集成
+### Phase 2 — 本机 daemon、令牌、无硬件联调（本交付）
 
-- DaemonClient 对接真实 `orca` daemon；  
-- MCP 鉴权与网络暴露方案；  
-- SiLA2 真实连接器（选 1 类 Feature）；  
-- ROS2 真实节点（Humble/Jazzy 择一）；  
-- 前端：事件 SSE、blocker/recovery 面板。  
+不接物理实验设备。不改 `src/orca` 的预约、死锁、SystemMap。
+
+| 工作包 | 内容 | 状态 |
+|--------|------|------|
+| WP2.1 Daemon HTTP | `OrcaDaemonBackend` 按 `DAEMON_ROUTE_CATALOG` 发请求。地址：`ORCA_DAEMON_URL`，否则 `~/.orca/daemon.json` 的 `port`。不猜 8000 | 已实现 |
+| WP2.2 run_mode | 控制面 `MOCK` → daemon `PURE_SIM`。`DEVICE_SIM` / `LIVE` 原样 | 已实现 |
+| WP2.3 默认执行面 | 未设置 `ORCA_MVC_RUNTIME` 时仍是 Mock。`daemon` 才用 HTTP 客户端。健康检查给出 `runtime_backend` 与 `daemon_reachable` | 已实现 |
+| WP2.4 本机认证 | `ORCA_MVC_API_TOKEN` Bearer。默认本机开放并警告。`ORCA_MVC_AUTH=required` 或非回环绑定则必须有令牌。MCP 把同一令牌转给控制面。不是 OAuth | 已实现 |
+| WP2.5 SiLA2 sim | 进程内 HTTP stub（`/sila/v1/features/...`），`mode=sim`。不是 gRPC，不连设备 | 已实现 |
+| WP2.6 ROS2 sim | 记录回放 + 进程内总线，`mode=sim`。`ORCA_MVC_ROS2=rclpy` 失败则退回总线 | 已实现 |
+| WP2.7 前端 | 执行面、daemon 可达、认证是否要求令牌；令牌来自 `VITE_ORCA_MVC_API_TOKEN` 或 localStorage | 已实现 |
+| WP2.8 测试 | MockTransport 覆盖提交/查询/两段式停止。活 daemon 只保留可选 skip 的 `/health` | 已实现 |
+
+**Phase2 出口**：pytest `tests/orca_mvc --confcutdir=tests/orca_mvc` 通过；README 写明 mock 与 `orca start` + `PURE_SIM` + `ORCA_MVC_RUNTIME=daemon` 的差别。
+
+**留给后续、本阶段不做**：
+
+- 真实 SiLA2 gRPC 设备与认证过的 Feature 实现  
+- 依赖 ROS 图的机械臂节点（Humble/Jazzy 真机）  
+- OAuth2 / 多用户  
+- 前端 blocker / recovery 面板（SSE 在 Phase1 已有）  
+- 在未挂载 workflow 的 daemon 上假装 `plate_readout` 能跑完  
+
+### Phase 2 任务明细
+
+1. 用 httpx 实现 submit / get / list / stop，状态字映射进控制面枚举。  
+2. 取消走两段式 stop：`confirm=false` 再 `confirm=true`。  
+3. 健康检查区分执行面名称和 daemon 是否可达。  
+4. Bearer 中间层（FastAPI 依赖）+ MCP 客户端带头。SSE 只用查询参数带令牌。  
+5. SiLA2 stub 与适配器；ROS2 jsonl 回放与总线；保留纯内存 mock 类供对照。  
+6. 前端药丸与令牌框。  
+7. 文档：本文件、`ref/progress.md`、`src/orca_mvc/README.md`、`doc/spec/ds.md`。  
 
 ### Phase 3 — 集群调度策略
 

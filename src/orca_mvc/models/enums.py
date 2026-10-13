@@ -15,8 +15,8 @@ class TaskStatus(str, Enum):
 class RunMode(str, Enum):
     """控制面运行模式。
 
-    MOCK 只存在于本控制面。Orca daemon 的 wire 值是 PURE_SIM / DEVICE_SIM / LIVE，
-    Phase 2 对接时必须显式映射，不能把 MOCK 原样塞进 POST /executions。
+    MOCK 只存在于本控制面。Orca daemon 的 wire 值是 PURE_SIM / DEVICE_SIM / LIVE。
+    OrcaDaemonBackend 把 MOCK 显式映射成 PURE_SIM，不会原样塞进 POST /executions。
     """
 
     PURE_SIM = "PURE_SIM"

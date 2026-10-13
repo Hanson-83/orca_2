@@ -24,7 +24,11 @@ def test_lifespan_starts_runtime_and_health() -> None:
         body = health.json()
         assert body["status"] == "ok"
         assert body["auth"] == "none"
+        assert body["auth_required"] is False
         assert body["runtime"] == "mock"
+        assert body["runtime_backend"] == "mock"
+        assert body["daemon_reachable"] is False
+        assert body["daemon_url"] is None
         cluster = client.get("/api/v1/cluster")
         assert cluster.status_code == 200
         assert len(cluster.json()["workcells"]) == 2
@@ -109,14 +113,14 @@ async def test_sse_hello_then_task_updated(plane: ControlPlane) -> None:
             pass
 
 
-async def test_daemon_submit_returns_501_without_http(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_daemon_submit_without_url_does_not_call_http(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ORCA_DAEMON_URL", raising=False)
 
     async def _block_async(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("OrcaDaemonBackend 不应通过 httpcore 发出 HTTP")
+        raise AssertionError("没有 daemon 地址时不应通过 httpcore 发出 HTTP")
 
     def _block_sync(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("OrcaDaemonBackend 不应通过 httpcore 发出 HTTP")
+        raise AssertionError("没有 daemon 地址时不应通过 httpcore 发出 HTTP")
 
     monkeypatch.setattr(httpcore.AsyncConnectionPool, "handle_async_request", _block_async)
     monkeypatch.setattr(httpcore.ConnectionPool, "handle_request", _block_sync)
@@ -127,6 +131,10 @@ async def test_daemon_submit_returns_501_without_http(monkeypatch: pytest.Monkey
         app = create_app(plane)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            health = await client.get("/api/v1/health")
+            assert health.status_code == 200, health.text
+            assert health.json()["runtime_backend"] == "orca-daemon"
+            assert health.json()["daemon_reachable"] is False
             created = await client.post(
                 "/api/v1/tasks",
                 json={
@@ -138,17 +146,17 @@ async def test_daemon_submit_returns_501_without_http(monkeypatch: pytest.Monkey
             assert created.status_code == 201, created.text
             task_id = created.json()["id"]
             submitted = await client.post(f"/api/v1/tasks/{task_id}/submit")
-            assert submitted.status_code == 501
+            assert submitted.status_code == 503
             detail = submitted.json()["detail"]
-            assert detail["code"] == "DAEMON_NOT_WIRED"
+            assert detail["code"] == "DAEMON_UNAVAILABLE"
             assert "MockRuntimeBackend" not in detail["message"]
 
             stored = (await client.get(f"/api/v1/tasks/{task_id}")).json()
             submit = stored["mapping"]["orca_submit"]
             assert submit["phase"] == "not_called"
             assert submit["path"] == "/executions"
-            assert submit["code"] == "DAEMON_NOT_WIRED"
-            assert "DAEMON_NOT_WIRED" in submit["reason"]
+            assert submit["code"] == "DAEMON_UNAVAILABLE"
+            assert submit["wire_run_mode"] == "PURE_SIM"
             assert "MockRuntimeBackend" not in submit["reason"]
             assert stored["status"] == "failed"
     finally:
